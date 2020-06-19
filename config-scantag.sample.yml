@@ -1,0 +1,2 @@
+regexespageid: # The ID on-wiki of the regex JSON file
+pathtoarticles: # The path to the gzipped titles in ns0 dump
