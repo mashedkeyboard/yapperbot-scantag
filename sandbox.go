@@ -43,12 +43,12 @@ const sandboxFooter string = `
 |}`
 
 const sandboxTemplateOpening string = `|-
-! colspan="7" | <code><nowiki>%s</nowiki></code>
+! colspan="8" | <code><nowiki>%s</nowiki></code>
 |-
 | `
 const sandboxTemplateCode string = `<code><nowiki>%v</nowiki></code>`
 const sandboxTemplateNoCode string = `<nowiki>%v</nowiki>`
-const sandboxError string = `colspan="7" {{no O|<code><nowiki>%s</nowiki></code>}}`
+const sandboxError string = `colspan="8" {{no O|<code><nowiki>%s</nowiki></code>}}`
 
 func createSandbox(w *mwclient.Client) {
 	sandboxMetaQuery, err := w.Get(params.Values{
