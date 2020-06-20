@@ -120,8 +120,8 @@ func createSandbox(w *mwclient.Client) {
 			if strings.HasPrefix(testpage, "User:Yapperbot/Scantag.sandbox/tests/") {
 				log.Println("Processing test page", testpage)
 				mapThisRegex := map[*regexp.Regexp]STRegex{expr: stregex}
-				processArticle(w, testpage, mapThisRegex, true)
-				processArticle(w, testpage, mapThisRegex, true)
+				processArticle(w, testpage, mapThisRegex, true, 0)
+				processArticle(w, testpage, mapThisRegex, true, 0)
 				sandboxBuilder.WriteString("{{ph|")
 				sandboxBuilder.WriteString(testpage)
 				sandboxBuilder.WriteString("|Up-to-date}}")

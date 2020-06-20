@@ -100,11 +100,11 @@ func main() {
 					if n%100 == 0 {
 						log.Println("Processed", n, "articles so far this run")
 					}
-					processArticle(w, scanner.Text(), regexes, false)
+					processArticle(w, scanner.Text(), regexes, false, 0)
 					n++
 				}
 			} else {
-				processArticle(w, testTitle, regexes, true)
+				processArticle(w, testTitle, regexes, true, 0)
 			}
 
 			log.Println("Completed processing, restarting")

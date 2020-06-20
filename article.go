@@ -31,12 +31,12 @@ import (
 	"github.com/mashedkeyboard/ybtools/v2"
 )
 
-func processArticle(w *mwclient.Client, title string, regexes map[*regexp.Regexp]STRegex, test bool) {
+func processArticle(w *mwclient.Client, title string, regexes map[*regexp.Regexp]STRegex, test bool, attempt int8) {
 	var articlePrepend strings.Builder
 	var articleAppend strings.Builder
 	var detected []string
 
-	text, err := ybtools.FetchWikitextFromTitle(title)
+	text, revTS, curTS, err := ybtools.FetchWikitextFromTitleWithTimestamps(title)
 	if err != nil {
 		if apierr, ok := err.(mwclient.APIError); ok && apierr.Code == "missingtitle" {
 			// just ignore it; probably deleted
@@ -90,13 +90,21 @@ func processArticle(w *mwclient.Client, title string, regexes map[*regexp.Regexp
 
 			// don't edit limit tests - they should never be in anything other than userspace
 			if test || ybtools.CanEdit() {
+				if prependText != "" {
+					text = insertMaintenanceTemplate(text, prependText)
+				}
+				if appendText != "" {
+					text = text + appendText
+				}
+
 				err := w.Edit(params.Values{
-					"title":       title,
-					"summary":     summaryBuilder.String(),
-					"bot":         "true",
-					"prependtext": prependText,
-					"appendtext":  appendText,
-					"md5":         fmt.Sprintf("%x", md5.Sum([]byte(prependText+appendText))),
+					"title":          title,
+					"summary":        summaryBuilder.String(),
+					"bot":            "true",
+					"basetimestamp":  revTS,
+					"starttimestamp": curTS,
+					"text":           text,
+					"md5":            fmt.Sprintf("%x", md5.Sum([]byte(text))),
 				})
 				if err == nil {
 					log.Println("Edited", title, "with", detectedBits)
@@ -112,6 +120,14 @@ func processArticle(w *mwclient.Client, title string, regexes map[*regexp.Regexp
 						case "protectedpage":
 							log.Println("Page", title, "is protected; we detected", detectedBits)
 							// future TODO: post to talk page, maybe?
+						case "editconflict":
+							if attempt < 3 {
+								processArticle(w, title, regexes, test, attempt+1)
+								return
+							}
+							// we've already tried three times, we've edit conflicted every time
+							// not worth it, just ignore the article for now; we'll come back later
+							return
 						default:
 							log.Println("Error editing page", title, ". The error was", err)
 						}
