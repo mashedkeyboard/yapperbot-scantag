@@ -65,7 +65,7 @@ func main() {
 			regexesJSON := ybtools.LoadJSONFromPageID(config.RegexesJSONPageID)
 
 			for regex, content := range regexesJSON.Map() {
-				expression, stregex, err := processRegex(regex, content)
+				expression, stregex, _, err := processRegex(regex, content)
 				if err != nil {
 					ybtools.PanicErr(err)
 				}
@@ -99,11 +99,11 @@ func main() {
 					if n%100 == 0 {
 						log.Println("Processed", n, "articles so far this run")
 					}
-					processArticle(w, scanner.Text())
+					processArticle(w, scanner.Text(), regexes, false)
 					n++
 				}
 			} else {
-				processArticle(w, testTitle)
+				processArticle(w, testTitle, regexes, true)
 			}
 
 			log.Println("Completed processing, restarting")

@@ -21,6 +21,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 
 	"cgt.name/pkg/go-mwclient"
@@ -28,10 +29,13 @@ import (
 	"github.com/mashedkeyboard/ybtools/v2"
 )
 
-// Leave the newline at the end of the header; it's important.
-const sandboxHeader string = `{|class="wikitable"
+const sandboxTimestamp string = `{{/ts|%d|%s|%s}}`
+
+// Leave the newlines on either side of the header; they're important.
+const sandboxHeader string = `<!-- Remove the ts template to force the sandbox to be regenerated -->
+{|class="wikitable"
 |-
-! Task !! Example !! Don't tag if matches !! Use noTagIf? !! Prefix the article with !! Suffix the article with !! Detected...
+! Task !! Example !! Don't tag if matches !! Use noTagIf? !! Prefix the article with !! Suffix the article with !! Detected... !! Test page
 `
 
 // Leave the newline at the start of this; it's also important.
@@ -42,43 +46,104 @@ const sandboxTemplateOpening string = `|-
 ! colspan="7" | <code><nowiki>%s</nowiki></code>
 |-
 | `
-const sandboxTemplate string = `<code><nowiki>%v</nowiki></code>`
+const sandboxTemplateCode string = `<code><nowiki>%v</nowiki></code>`
+const sandboxTemplateNoCode string = `<nowiki>%v</nowiki>`
 const sandboxError string = `colspan="7" {{no O|<code><nowiki>%s</nowiki></code>}}`
 
 func createSandbox(w *mwclient.Client) {
+	sandboxMetaQuery, err := w.Get(params.Values{
+		"action":  "query",
+		"prop":    "revisions",
+		"pageids": config.SandboxJSONPageID,
+		"rvprop":  "ids|timestamp|user",
+	})
+	if err != nil {
+		ybtools.PanicErr("Failed to fetch sandbox JSON metadata with error ", err)
+	}
+
+	sandboxMetaPages := ybtools.GetPagesFromQuery(sandboxMetaQuery)
+	sandboxMeta, err := sandboxMetaPages[0].GetObjectArray("revisions")
+	if err != nil {
+		ybtools.PanicErr("Failed to get revisions from sandbox metadata with error ", err)
+	}
+
+	revid, err := sandboxMeta[0].GetInt64("revid")
+	if err != nil {
+		ybtools.PanicErr("Sandbox JSON revid invalid with error ", err)
+	}
+	user, err := sandboxMeta[0].GetString("user")
+	if err != nil {
+		ybtools.PanicErr("Sandbox JSON user invalid with error ", err)
+	}
+	ts, err := sandboxMeta[0].GetString("timestamp")
+	if err != nil {
+		ybtools.PanicErr("Sandbox JSON timestamp invalid with error ", err)
+	}
+
+	sandboxTS := fmt.Sprintf(sandboxTimestamp, revid, ts, user)
+
 	sandboxJSON := ybtools.LoadJSONFromPageID(config.SandboxJSONPageID)
+
+	sandboxPageText, err := ybtools.FetchWikitext(config.SandboxPageID)
+	if err != nil {
+		ybtools.PanicErr("Failed to fetch sandbox page text with error ", err)
+	}
+
+	if strings.HasPrefix(sandboxPageText, sandboxTS) {
+		// No updates since the last time we ran; we can just end here
+		log.Println("No sandbox changes to update")
+		return
+	}
+
 	var sandboxBuilder strings.Builder
 
+	sandboxBuilder.WriteString(sandboxTS)
 	sandboxBuilder.WriteString(sandboxHeader)
 
 	for regex, content := range sandboxJSON.Map() {
 		sandboxBuilder.WriteString(fmt.Sprintf(sandboxTemplateOpening, regex))
-		_, stregex, err := processRegex(regex, content)
+		expr, stregex, testpage, err := processRegex(regex, content)
 		if err != nil {
 			sandboxBuilder.WriteString(fmt.Sprintf(sandboxError, err))
 			continue
 		}
 
-		var bits []string
-		for _, thing := range []interface{}{stregex.Task, stregex.Example, stregex.NoTagIf, stregex.UseNTI, stregex.Prefix, stregex.Suffix, stregex.Detected} {
-			bits = append(bits, fmt.Sprintf(sandboxTemplate, thing))
+		writeCell(&sandboxBuilder, sandboxTemplateNoCode, stregex.Task)
+
+		for _, thing := range []interface{}{stregex.Example, stregex.NoTagIf, stregex.UseNTI, stregex.Prefix, stregex.Suffix} {
+			writeCell(&sandboxBuilder, sandboxTemplateCode, thing)
 		}
-		sandboxBuilder.WriteString(strings.Join(bits, " || "))
+
+		writeCell(&sandboxBuilder, sandboxTemplateNoCode, stregex.Detected)
+
+		if testpage != "" {
+			if strings.HasPrefix(testpage, "User:Yapperbot/Scantag.sandbox/tests/") {
+				log.Println("Processing test page", testpage)
+				mapThisRegex := map[*regexp.Regexp]STRegex{expr: stregex}
+				processArticle(w, testpage, mapThisRegex, true)
+				processArticle(w, testpage, mapThisRegex, true)
+				sandboxBuilder.WriteString("{{ph|")
+				sandboxBuilder.WriteString(testpage)
+				sandboxBuilder.WriteString("|Up-to-date}}")
+			} else {
+				log.Println("Invalid test page", testpage)
+			}
+		}
 	}
 
 	sandboxBuilder.WriteString(sandboxFooter)
 
-	err := w.Edit(params.Values{
+	err = w.Edit(params.Values{
 		"pageid":  config.SandboxPageID,
 		"summary": "Updating sandbox from JSON",
 		"bot":     "true",
 		"text":    sandboxBuilder.String(),
 	})
 	if err == nil {
-		log.Println("All done, sandbox updated")
+		log.Println("Sandbox updated")
 	} else {
 		if err == mwclient.ErrEditNoChange {
-			log.Println("No sandbox changes to update")
+			log.Println("Detected sandbox changes to update, but looks like there actually weren't any")
 		} else {
 			switch err.(type) {
 			case mwclient.APIError:
@@ -93,4 +158,9 @@ func createSandbox(w *mwclient.Client) {
 			}
 		}
 	}
+}
+
+func writeCell(builder *strings.Builder, templateType string, thing interface{}) {
+	builder.WriteString(fmt.Sprintf(templateType, thing))
+	builder.WriteString(" || ")
 }

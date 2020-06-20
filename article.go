@@ -30,7 +30,7 @@ import (
 	"github.com/mashedkeyboard/ybtools/v2"
 )
 
-func processArticle(w *mwclient.Client, title string) {
+func processArticle(w *mwclient.Client, title string, regexes map[*regexp.Regexp]STRegex, test bool) {
 	var articlePrepend strings.Builder
 	var articleAppend strings.Builder
 	var detected []string
@@ -76,13 +76,17 @@ func processArticle(w *mwclient.Client, title string) {
 		// there's something to edit!
 		var summaryBuilder strings.Builder
 		var detectedBits string = strings.Join(detected, "; ")
+		if test {
+			summaryBuilder.WriteString("SANDBOX: ")
+		}
 		summaryBuilder.WriteString("[[User:Yapperbot/Scantag|Scantag]] detected ")
 		summaryBuilder.WriteString(detectedBits)
 		summaryBuilder.WriteString(". Tagging article.")
 		prependText := articlePrepend.String()
 		appendText := articleAppend.String()
 
-		if ybtools.CanEdit() {
+		// don't edit limit tests - they should never be in anything other than userspace
+		if test || ybtools.CanEdit() {
 			err := w.Edit(params.Values{
 				"title":       title,
 				"summary":     summaryBuilder.String(),

@@ -36,7 +36,7 @@ type STRegex struct {
 	Detected string
 }
 
-func processRegex(regex string, content *jason.Value) (expr *regexp.Regexp, strgx STRegex, err error) {
+func processRegex(regex string, content *jason.Value) (expr *regexp.Regexp, strgx STRegex, testpage string, err error) {
 	value, err := content.Object()
 	if err != nil {
 		err = fmt.Errorf("Scantag.json key `%s` is invalid! Error was %s", regex, err)
@@ -79,6 +79,7 @@ func processRegex(regex string, content *jason.Value) (expr *regexp.Regexp, strg
 
 	task, _ := value.GetString("task")
 	example, _ := value.GetString("example")
+	testpage, _ = value.GetString("testpage")
 
 	return expression, STRegex{
 		Task:     task,
@@ -88,7 +89,7 @@ func processRegex(regex string, content *jason.Value) (expr *regexp.Regexp, strg
 		Suffix:   suffix,
 		NoTagIf:  ntiexp,
 		UseNTI:   useNTI,
-	}, nil
+	}, testpage, nil
 }
 
 /* The JSON file containing regexes is expected to be of this format:
@@ -100,7 +101,8 @@ func processRegex(regex string, content *jason.Value) (expr *regexp.Regexp, strg
 		"noTagIf": "A regex which, if it matches against the page, will cause the page to be ignored. Usually used to avoid tagging pages that already contain maintenance tags. Use boolean false to always tag; be careful with this! Like the key regex, must be JSON escaped as well as valid regex.",
 		"prefix": "Something to prefix the articles that the task finds with, with $ signs escaped with an additional sign (i.e. $ in output should read $$); each regex capture group is available as "${n}", replacing n with the one-indexed number of the capture group",
 		"suffix": "Same as prefix, but appends to the article rather than prepending",
-        "detected": "Describes what was detected and why it's doing something; should come after the word 'detected', and potentially have other detected aspects after it separated with semicolons"
+		"detected": "Describes what was detected and why it's doing something; should come after the word 'detected', and potentially have other detected aspects after it separated with semicolons",
+		"testpage": "The page name of a page on which the matching will be tested. When the sandbox is updated, Yapperbot will run Scantag's sandbox rules twice (so that the NoTagIf rule can be tested) over this page. Must be prefixed 'User:Yapperbot/Scantag.sandbox/tests/'."
     }
 }
 
