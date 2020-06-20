@@ -24,6 +24,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"time"
 
 	"cgt.name/pkg/go-mwclient"
 	"cgt.name/pkg/go-mwclient/params"
@@ -99,6 +100,7 @@ func processArticle(w *mwclient.Client, title string, regexes map[*regexp.Regexp
 				})
 				if err == nil {
 					log.Println("Edited", title, "with", detectedBits)
+					time.Sleep(10 * time.Second)
 				} else {
 					switch err.(type) {
 					case mwclient.APIError:
