@@ -70,6 +70,7 @@ func main() {
 					ybtools.PanicErr(err)
 				}
 				regexes[expression] = stregex
+				log.Println("Found regex:", regex)
 			}
 
 			log.Println("Starting processing")
