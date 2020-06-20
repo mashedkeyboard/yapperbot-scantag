@@ -45,78 +45,81 @@ func processArticle(w *mwclient.Client, title string, regexes map[*regexp.Regexp
 		return
 	}
 
-	for regex, rsetup := range regexes {
-		match := regex.FindStringSubmatchIndex(text)
-		if match == nil {
-			continue
-		}
-
-		// make sure that there are no matches of NoTagIf
-		if rsetup.UseNTI && rsetup.NoTagIf.MatchString(text) {
-			// match found; ignore this regex
-			continue
-		}
-
-		var edited bool
-
-		if rsetup.Prefix != "" {
-			edited = tagIfNeeded(&articlePrepend, regex, rsetup, text, match)
-		}
-		if rsetup.Suffix != "" {
-			// set edited true if tagIfNeeded returns true; else, leave the previous value
-			edited = tagIfNeeded(&articleAppend, regex, rsetup, text, match) || edited
-		}
-
-		if edited {
-			detected = append(detected, rsetup.Detected)
-		}
-	}
-
-	if articlePrepend.Len() != 0 || articleAppend.Len() != 0 {
-		// there's something to edit!
-		var summaryBuilder strings.Builder
-		var detectedBits string = strings.Join(detected, "; ")
-		if test {
-			summaryBuilder.WriteString("SANDBOX: ")
-		}
-		summaryBuilder.WriteString("[[User:Yapperbot/Scantag|Scantag]] detected ")
-		summaryBuilder.WriteString(detectedBits)
-		summaryBuilder.WriteString(". Tagging article.")
-		prependText := articlePrepend.String()
-		appendText := articleAppend.String()
-
-		// don't edit limit tests - they should never be in anything other than userspace
-		if test || ybtools.CanEdit() {
-			err := w.Edit(params.Values{
-				"title":       title,
-				"summary":     summaryBuilder.String(),
-				"bot":         "true",
-				"prependtext": prependText,
-				"appendtext":  appendText,
-				"md5":         fmt.Sprintf("%x", md5.Sum([]byte(prependText+appendText))),
-			})
-			if err == nil {
-				log.Println("Edited", title, "with", detectedBits)
-			} else {
-				switch err.(type) {
-				case mwclient.APIError:
-					switch err.(mwclient.APIError).Code {
-					case "noedit", "writeapidenied", "blocked":
-						ybtools.PanicErr("noedit/writeapidenied/blocked code returned, the bot may have been blocked. Dying")
-					case "pagedeleted":
-						log.Println("Page", title, "was deleted before we could get to it")
-					case "protectedpage":
-						log.Println("Page", title, "is protected; we detected", detectedBits)
-						// future TODO: post to talk page, maybe?
-					default:
-						log.Println("Error editing page", title, ". The error was", err)
-					}
-				default:
-					ybtools.PanicErr("Non-API error returned when trying to write to page ", title, " so dying. Error was ", err)
-				}
+	// Check for and respect nobots before we do anything else
+	if ybtools.BotAllowed(text) {
+		for regex, rsetup := range regexes {
+			match := regex.FindStringSubmatchIndex(text)
+			if match == nil {
+				continue
 			}
-		} else {
-			ybtools.PanicErr("Edit limited out, stopping")
+
+			// make sure that there are no matches of NoTagIf
+			if rsetup.UseNTI && rsetup.NoTagIf.MatchString(text) {
+				// match found; ignore this regex
+				continue
+			}
+
+			var edited bool
+
+			if rsetup.Prefix != "" {
+				edited = tagIfNeeded(&articlePrepend, regex, rsetup, text, match)
+			}
+			if rsetup.Suffix != "" {
+				// set edited true if tagIfNeeded returns true; else, leave the previous value
+				edited = tagIfNeeded(&articleAppend, regex, rsetup, text, match) || edited
+			}
+
+			if edited {
+				detected = append(detected, rsetup.Detected)
+			}
+		}
+
+		if articlePrepend.Len() != 0 || articleAppend.Len() != 0 {
+			// there's something to edit!
+			var summaryBuilder strings.Builder
+			var detectedBits string = strings.Join(detected, "; ")
+			if test {
+				summaryBuilder.WriteString("SANDBOX: ")
+			}
+			summaryBuilder.WriteString("[[User:Yapperbot/Scantag|Scantag]] detected ")
+			summaryBuilder.WriteString(detectedBits)
+			summaryBuilder.WriteString(". Tagging article.")
+			prependText := articlePrepend.String()
+			appendText := articleAppend.String()
+
+			// don't edit limit tests - they should never be in anything other than userspace
+			if test || ybtools.CanEdit() {
+				err := w.Edit(params.Values{
+					"title":       title,
+					"summary":     summaryBuilder.String(),
+					"bot":         "true",
+					"prependtext": prependText,
+					"appendtext":  appendText,
+					"md5":         fmt.Sprintf("%x", md5.Sum([]byte(prependText+appendText))),
+				})
+				if err == nil {
+					log.Println("Edited", title, "with", detectedBits)
+				} else {
+					switch err.(type) {
+					case mwclient.APIError:
+						switch err.(mwclient.APIError).Code {
+						case "noedit", "writeapidenied", "blocked":
+							ybtools.PanicErr("noedit/writeapidenied/blocked code returned, the bot may have been blocked. Dying")
+						case "pagedeleted":
+							log.Println("Page", title, "was deleted before we could get to it")
+						case "protectedpage":
+							log.Println("Page", title, "is protected; we detected", detectedBits)
+							// future TODO: post to talk page, maybe?
+						default:
+							log.Println("Error editing page", title, ". The error was", err)
+						}
+					default:
+						ybtools.PanicErr("Non-API error returned when trying to write to page ", title, " so dying. Error was ", err)
+					}
+				}
+			} else {
+				ybtools.PanicErr("Edit limited out, stopping")
+			}
 		}
 	}
 }
