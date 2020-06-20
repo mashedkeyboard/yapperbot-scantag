@@ -21,142 +21,92 @@ package main
 import (
 	"bufio"
 	"compress/gzip"
-	"crypto/md5"
-	"fmt"
+	"flag"
 	"log"
 	"os"
 	"regexp"
-	"strings"
 
 	"cgt.name/pkg/go-mwclient"
-	"cgt.name/pkg/go-mwclient/params"
 	"github.com/mashedkeyboard/ybtools/v2"
 )
 
 var config Config
 var regexes = map[*regexp.Regexp]STRegex{}
+var testTitle string
+var sandbox bool
 
 func init() {
 	ybtools.SetupBot(ybtools.BotSettings{TaskName: "Scantag", BotUser: "Yapperbot"})
 	ybtools.ParseTaskConfig(&config)
+
+	flag.StringVar(&testTitle, "test", "", "Test the regexes against a single title, rather than over all pages. Default is an empty string.")
+	flag.BoolVar(&sandbox, "sandbox", false, "Update the sandbox, rather than doing a run of the bot")
 }
 
 func main() {
+	flag.Parse()
+
 	// Create a client here with significantly laxer Maxlag params
 	w := ybtools.CreateAndAuthenticateClient(mwclient.Maxlag{
 		On:      true,
 		Timeout: "3",
 		Retries: 10,
 	})
+	if sandbox {
+		createSandbox(w)
+	} else {
+		// If we edit-limit out, ybtools panics. This means defers are run,
+		// so edit-limiting should still work.
+		defer ybtools.SaveEditLimit()
 
-	regexesJSON := ybtools.LoadJSONFromPageID(config.RegexesPageID)
+		for {
+			log.Println("Retrieving regexes")
 
-	for regex, content := range regexesJSON.Map() {
-		value, err := content.Object()
-		if err != nil {
-			ybtools.PanicErr("Scantag.json is invalid! Error was ", err)
-		}
+			regexesJSON := ybtools.LoadJSONFromPageID(config.RegexesJSONPageID)
 
-		expression, err := regexp.Compile("(?i)" + regex)
-		if err != nil {
-			ybtools.PanicErr("Regex `"+regex+"` is invalid! Error was ", err)
-		}
-
-		detected, err := value.GetString("detected")
-		if err != nil {
-			ybtools.PanicErr("Scantag.json is invalid, no detected string retrieved for `", regex, "` - error was ", err)
-		}
-
-		prefix, _ := value.GetString("prefix")
-		suffix, _ := value.GetString("suffix")
-		regexes[expression] = STRegex{
-			Detected: detected,
-			Prefix:   prefix,
-			Suffix:   suffix,
-		}
-	}
-
-	file, err := os.Open(config.PathToArticles)
-	if err != nil {
-		ybtools.PanicErr("Failed to open PathToArticles with error ", err)
-	}
-	defer file.Close()
-
-	reader, err := gzip.NewReader(file)
-	if err != nil {
-		ybtools.PanicErr("Failed to create gzip reader with error ", err)
-	}
-	defer reader.Close()
-
-	scanner := bufio.NewScanner(reader)
-
-	// Ignore the first line; it's a header, page_title
-	scanner.Scan()
-
-	for scanner.Scan() {
-		var queueEdit bool
-		var articlePrepend strings.Builder
-		var articleAppend strings.Builder
-		var detected []string
-		var title string = scanner.Text()
-
-		log.Println(title)
-
-		text, err := ybtools.FetchWikitextFromTitle(title)
-		if err != nil {
-			if apierr, ok := err.(mwclient.APIError); ok && apierr.Code == "missingtitle" {
-				// just ignore it; probably deleted
-				continue
+			for regex, content := range regexesJSON.Map() {
+				expression, stregex, err := processRegex(regex, content)
+				if err != nil {
+					ybtools.PanicErr(err)
+				}
+				regexes[expression] = stregex
 			}
-			log.Println("Failed to fetch wikitext from title", title, "with error", err)
-			continue
-		}
 
-		for regex, rsetup := range regexes {
-			match := regex.FindStringSubmatch(text)
-			if match == nil {
-				continue
-			}
-			queueEdit = true
-			detected = append(detected, rsetup.Detected)
+			log.Println("Starting processing")
 
-			// Because we have an array of strings, not an array of interfaces,
-			// despite the fact that strings obviously implement interface,
-			// we have to convert the string array to an interface array here.
-			// I don't like this, at all, but it's the way it works... sadly
-			// See https://stackoverflow.com/questions/12753805/type-converting-slices-of-interfaces
-			// and https://stackoverflow.com/questions/30588581/how-to-pass-variable-parameters-to-sprintf-in-golang
+			if testTitle == "" {
+				file, err := os.Open(config.PathToArticles)
+				if err != nil {
+					ybtools.PanicErr("Failed to open PathToArticles with error ", err)
+				}
+				defer file.Close()
 
-			// Ignore the first key, as that's the full string match, which we don't need at all
-			interfaceMatch := make([]interface{}, len(match)-1)
-			for i := 1; i < len(match); i++ {
-				interfaceMatch[i-1] = match[i]
-			}
-			if rsetup.Prefix != "" {
-				articlePrepend.WriteString(fmt.Sprintf(rsetup.Prefix, interfaceMatch...))
-			}
-			if rsetup.Suffix != "" {
-				articleAppend.WriteString(fmt.Sprintf(rsetup.Suffix, interfaceMatch...))
-			}
-		}
+				reader, err := gzip.NewReader(file)
+				if err != nil {
+					ybtools.PanicErr("Failed to create gzip reader with error ", err)
+				}
+				defer reader.Close()
 
-		if queueEdit {
-			var summaryBuilder strings.Builder
-			summaryBuilder.WriteString("[[User:Yapperbot/Scantag|Scantag]] detected ")
-			summaryBuilder.WriteString(strings.Join(detected, "; "))
-			summaryBuilder.WriteString(". Tagging article.")
-			prependText := articlePrepend.String()
-			appendText := articleAppend.String()
-			if ybtools.CanEdit() {
-				w.Edit(params.Values{
-					"title":       title,
-					"summary":     summaryBuilder.String(),
-					"bot":         "true",
-					"prependtext": prependText,
-					"appendtext":  appendText,
-					"md5":         fmt.Sprintf("%x", md5.Sum([]byte(prependText+appendText))),
-				})
+				scanner := bufio.NewScanner(reader)
+
+				// Ignore the first line; it's a header, page_title
+				scanner.Scan()
+
+				// at the point at which Wikipedia has more articles than can fit in a uint64, well, this will be fairly obsolete anyway >:)
+				var n uint64
+
+				for scanner.Scan() {
+					if n%100 == 0 {
+						log.Println("Processed", n, "articles so far this run")
+					}
+					processArticle(w, scanner.Text())
+					n++
+				}
+			} else {
+				processArticle(w, testTitle)
 			}
+
+			log.Println("Completed processing, restarting")
 		}
 	}
 }

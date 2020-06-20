@@ -1,2 +1,5 @@
-regexespageid: # The ID on-wiki of the regex JSON file
+regexesjsonpageid: # The ID on-wiki of the regex JSON file
+sandboxjsonpageid: # The ID on-wiki of the sandbox JSON file
+sandboxpageid: # The ID on-wiki of the human-readable sandbox
 pathtoarticles: # The path to the gzipped titles in ns0 dump
+editlimit: # An edit limit, if need be

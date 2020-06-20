@@ -21,6 +21,8 @@ package main
 // Config stores relevant configuration information, and is retrieved from a
 // YAML file by ybtools.
 type Config struct {
-	RegexesPageID  string
-	PathToArticles string
+	RegexesJSONPageID string
+	SandboxJSONPageID string
+	SandboxPageID     string
+	PathToArticles    string
 }
