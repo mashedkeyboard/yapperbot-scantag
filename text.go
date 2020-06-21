@@ -24,7 +24,7 @@ import (
 //
 
 // The below regexes are inspired by
-// https://github.com/azatoth/twinkle/blob/master/modules/friendlytag.js#L1661 and
+// https://github.com/azatoth/twinkle/blob/6575649e13aad887058b404206b531cc3be6b144/modules/friendlytag.js#L1634 and
 // https://github.com/reedy/AutoWikiBrowser/blob/9a60e46d148d84ae2bcae4d66882485da9fdd24c/WikiFunctions/WikiRegexes.cs#L1177.
 // They have been reconfigured to add additional templates, and to work with Golang's RE2 system of regex matching.
 const regexOpen = `(?i)^\s*(?:((?:\s*`
