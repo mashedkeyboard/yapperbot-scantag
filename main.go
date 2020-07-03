@@ -25,10 +25,15 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"strings"
 
 	"cgt.name/pkg/go-mwclient"
+	"cgt.name/pkg/go-mwclient/params"
 	"github.com/mashedkeyboard/ybtools/v2"
 )
+
+// This is the maximum number of articles we process per batch
+const batchLimit int = 500
 
 var config Config
 var regexes = map[*regexp.Regexp]STRegex{}
@@ -94,20 +99,50 @@ func main() {
 				scanner.Scan()
 
 				// at the point at which Wikipedia has more articles than can fit in a uint64, well, this will be fairly obsolete anyway >:)
-				var n uint64
+				var totalArticlesProcessed uint64
 
+				var batch []string
 				for scanner.Scan() {
-					if n%100 == 0 {
-						log.Println("Processed", n, "articles so far this run")
+					// append our new title to our batch
+					batch = append(batch, scanner.Text())
+					if len(batch) == batchLimit {
+						log.Println("Got new batch, processing")
+						processBatch(w, batch, &totalArticlesProcessed)
+						log.Println("Batch finished, collecting next batch; total processed now at", totalArticlesProcessed)
+						batch = nil
 					}
-					processArticle(w, scanner.Text(), regexes, false, 0)
-					n++
+				}
+
+				// if there was something left in the batch, but we didn't reach 500, process it now we're done
+				if len(batch) > 0 {
+					log.Println("Processing final batch")
+					processBatch(w, batch, &totalArticlesProcessed)
+					log.Println("Final batch complete; processed", totalArticlesProcessed, "pages")
+					batch = nil
 				}
 			} else {
-				processArticle(w, testTitle, regexes, true, 0)
+				content, revTS, curTS, err := ybtools.FetchWikitextFromTitleWithTimestamps(testTitle)
+				if err != nil {
+					log.Fatalln("Failed to fetch", testTitle, "with error", err)
+				}
+				processArticle(w, testTitle, content, revTS, curTS, regexes, true, 0)
 			}
 
 			log.Println("Completed processing, restarting")
 		}
 	}
+}
+
+func processBatch(w *mwclient.Client, batch []string, totalArticlesProcessed *uint64) {
+	ybtools.ForPageInQuery(params.Values{
+		"action":       "query",
+		"titles":       strings.Join(batch, "|"),
+		"prop":         "revisions",
+		"curtimestamp": "1",
+		"rvprop":       "timestamp|content",
+		"rvslots":      "main",
+	}, func(title, text, revTS, curTS string) {
+		processArticle(w, title, text, revTS, curTS, regexes, false, 0)
+	})
+	*totalArticlesProcessed += 500
 }

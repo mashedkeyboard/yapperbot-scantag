@@ -31,20 +31,10 @@ import (
 	"github.com/mashedkeyboard/ybtools/v2"
 )
 
-func processArticle(w *mwclient.Client, title string, regexes map[*regexp.Regexp]STRegex, test bool, attempt int8) {
+func processArticle(w *mwclient.Client, title, text, revTS, curTS string, regexes map[*regexp.Regexp]STRegex, test bool, attempt int8) {
 	var articlePrepend strings.Builder
 	var articleAppend strings.Builder
 	var detected []string
-
-	text, revTS, curTS, err := ybtools.FetchWikitextFromTitleWithTimestamps(title)
-	if err != nil {
-		if apierr, ok := err.(mwclient.APIError); ok && apierr.Code == "missingtitle" {
-			// just ignore it; probably deleted
-			return
-		}
-		log.Println("Failed to fetch wikitext from title", title, "with error", err)
-		return
-	}
 
 	// Check for and respect nobots before we do anything else
 	if ybtools.BotAllowed(text) {
@@ -122,7 +112,7 @@ func processArticle(w *mwclient.Client, title string, regexes map[*regexp.Regexp
 							// future TODO: post to talk page, maybe?
 						case "editconflict":
 							if attempt < 3 {
-								processArticle(w, title, regexes, test, attempt+1)
+								processArticle(w, title, text, revTS, curTS, regexes, test, attempt+1)
 								return
 							}
 							// we've already tried three times, we've edit conflicted every time

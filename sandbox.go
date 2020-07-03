@@ -120,10 +120,21 @@ func createSandbox(w *mwclient.Client) {
 			if strings.HasPrefix(testpage, "User:Yapperbot/Scantag.sandbox/tests/") {
 				log.Println("Processing test page", testpage)
 				mapThisRegex := map[*regexp.Regexp]STRegex{expr: stregex}
-				processArticle(w, testpage, mapThisRegex, true, 0)
-				processArticle(w, testpage, mapThisRegex, true, 0)
+
 				sandboxBuilder.WriteString("{{ph|")
 				sandboxBuilder.WriteString(testpage)
+				content, revTS, curTS, err := ybtools.FetchWikitextFromTitleWithTimestamps(testpage)
+				if err != nil {
+					if apierr, ok := err.(mwclient.APIError); ok && apierr.Code == "missingtitle" {
+						sandboxBuilder.WriteString("|Page does not exist}}")
+					} else {
+						log.Println("Failed to fetch wikitext from testpage in sandbox", testpage, "with error", err)
+						sandboxBuilder.WriteString("|Errored when retrieving page}}")
+					}
+				}
+
+				processArticle(w, testpage, content, revTS, curTS, mapThisRegex, true, 0)
+				processArticle(w, testpage, content, revTS, curTS, mapThisRegex, true, 0)
 				sandboxBuilder.WriteString("|Up-to-date}}")
 			} else {
 				log.Println("Invalid test page", testpage)
